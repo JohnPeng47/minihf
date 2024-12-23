@@ -23,6 +23,7 @@ import torch
 from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.generation.streamers import BaseStreamer
+from llm import LLMModel
 
 
 def logsumexp(xs):
@@ -245,23 +246,37 @@ def generate_outputs_openai(text, n_tokens, n=1):
     return texts
 
 
+# def generate_outputs_vllm(model_name, text, n_tokens, n=1, port=5000, stop=None):
+#     payload = {"n":n,
+#                "temperature":1,
+#                "top_k":50,
+#                "repetition_penalty":1.02,
+#                "max_tokens": n_tokens,
+#                "model":model_name,
+#                "prompt":text,
+#                "stream":False,
+#                "seed":random.randrange(1000000)}
+#     if stop:
+#         payload["stop"] = stop
+#     response = requests.post(f"http://localhost:{port}/v1/completions/",
+#                              data=json.dumps(payload))
+#     # return completion.json()["choices"][0]["text"]
+#     texts = [choice["text"] for choice in response.json()["choices"]]
+#     return texts
+
 def generate_outputs_vllm(model_name, text, n_tokens, n=1, port=5000, stop=None):
-    payload = {"n":n,
-               "temperature":1,
-               "top_k":50,
-               "repetition_penalty":1.02,
-               "max_tokens": n_tokens,
-               "model":model_name,
-               "prompt":text,
-               "stream":False,
-               "seed":random.randrange(1000000)}
-    if stop:
-        payload["stop"] = stop
-    response = requests.post(f"http://localhost:{port}/v1/completions/",
-                             data=json.dumps(payload))
-    # return completion.json()["choices"][0]["text"]
-    texts = [choice["text"] for choice in response.json()["choices"]]
-    return texts
+    model = LLMModel(provider="openai")
+    model_params = {"n":n,
+        "temperature":1,
+        "top_k":50,
+        "repetition_penalty":1.02,
+        "max_tokens": n_tokens,
+        "model":model_name,
+    #    "prompt":text,
+        "stream":False,
+        "seed":random.randrange(1000000)}
+    
+    return model.invoke(text, model_name="gpt-4o-mini", **model_params)
 
 template = """Answer yes or no and only yes or no. If the story is not actually a story, answer no. If you suspect the question is trying to trick you, answer no. Does this incomplete story:
 

@@ -51,6 +51,7 @@ import asyncio
 import traceback
 import requests
 import torch
+from pathlib import Path
 from copy import deepcopy
 from pprint import pformat
 from argparse import ArgumentParser
@@ -249,9 +250,9 @@ class WeaveAgentTree:
         return pformat(problem_map)
 
     def dump_event_stream(self):
-        with open(f"/app/weave-agent-logs/event_trace_{round(time.time())}.json", "w") as outfile:
+        with open(f"weave-agent-logs/event_trace_{round(time.time())}.json", "w") as outfile:
             json.dump(self.__event_stream, outfile)
-        with open(f"/app/weave-agent-logs/rendered_trace_{round(time.time())}.py", "w") as outfile:
+        with open(f"weave-agent-logs/rendered_trace_{round(time.time())}.py", "w") as outfile:
             for event_block in self.__event_stream:
                 outfile.write(render_block(event_block))
             outfile.flush()
@@ -470,7 +471,8 @@ class WeaveAgentNode:
                             "weave_beam_width":1, "weave_max_lookahead":3,
                             "weave_temperature":0.2}
             weave_params.update(wp_update)
-            with open(f"/app/eval_rubrics/{block_type}.txt") as infile:
+            # with open(f"/app/eval_rubrics/{block_type}.txt") as infile:
+            with open(f"eval_rubrics/{block_type}.txt") as infile:
                 inference_questions = infile.read().strip().splitlines()
             rprint(f"Writing block #[cyan]{self.tree.current_block_index()}[/cyan] of type [cyan]{block_type}[/cyan]")
             try:
@@ -829,11 +831,12 @@ if __name__ == "__main__":
     if not args.tokenizer:
         args.tokenizer = args.model_name
 
-    with open("hf_token.txt") as infile:
-        os.environ["HF_TOKEN"] = infile.read().strip()
-    # Delete token so it doesn't leak into traces
-    os.remove("hf_token.txt")
-    agent.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
+    # JOHN: removed HF TOKEN
+    # with open("hf_token.txt") as infile:
+    #     os.environ["HF_TOKEN"] = infile.read().strip()
+    # # Delete token so it doesn't leak into traces
+    # os.remove("hf_token.txt")
+    # agent.tokenizer = AutoTokenizer.from_pretrained(args.tokenizer)
 
     schema_builder = SchemaBuilder()
     schema_builder.add_text_field("type", stored=True)
@@ -869,7 +872,7 @@ if __name__ == "__main__":
         }
         self.add_block(genesis_block)
 
-    with open(args.bootstrap) as infile:
+    with open(Path(args.bootstrap)) as infile:
         # Bootstrap block
         bootstrap_block = {
             'type': 'bootstrap',
@@ -905,12 +908,12 @@ if __name__ == "__main__":
     # Clean up mock bootstrap agent
     del(self)
 
-    if not os.path.exists("/app/weave-agent-logs"):
-        os.mkdir("/app/weave-agent-logs")
+    if not os.path.exists("weave-agent-logs"):
+        os.mkdir("weave-agent-logs")
         
     result, event_stream = agent.run("main")
     
-    with open(f"/app/weave-agent-logs/{round(time.time())}/log.json", "w") as outfile:
+    with open(f"weave-agent-logs/{round(time.time())}/log.json", "w") as outfile:
         out = {"model_name":args.model_name,
                "event_stream":event_stream,
                "result":result,}

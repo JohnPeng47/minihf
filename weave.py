@@ -22,6 +22,7 @@ from tqdm import tqdm
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from transformers.generation.streamers import BaseStreamer
 
+from llm import LLMModel
 
 def logsumexp(xs):
     if not len(xs):
@@ -243,21 +244,35 @@ def generate_outputs_openai(text, n_tokens, n=1):
     return texts
 
 
+# def generate_outputs_vllm(model_name, text, n_tokens, n=1, port=5000):
+#     payload = {"n":n,
+#                "temperature":1,
+#                "top_k":50,
+#                "repetition_penalty":1.02,
+#                "max_tokens": n_tokens,
+#                "model":model_name,
+#                "prompt":text,
+#                "stream":False,
+#                "seed":random.randrange(1000000)}
+#     response = requests.post(f"http://localhost:{port}/v1/completions/",
+#                              data=json.dumps(payload))
+#     # return completion.json()["choices"][0]["text"]
+#     texts = [choice["text"] for choice in response.json()["choices"]]
+#     return texts
+
 def generate_outputs_vllm(model_name, text, n_tokens, n=1, port=5000):
-    payload = {"n":n,
+    model = LLMModel(provider="openai")
+    model_params = {"n":n,
                "temperature":1,
                "top_k":50,
                "repetition_penalty":1.02,
                "max_tokens": n_tokens,
-               "model":model_name,
-               "prompt":text,
+            #    "model":model_name,
+            #    "prompt":text,
                "stream":False,
                "seed":random.randrange(1000000)}
-    response = requests.post(f"http://localhost:{port}/v1/completions/",
-                             data=json.dumps(payload))
-    # return completion.json()["choices"][0]["text"]
-    texts = [choice["text"] for choice in response.json()["choices"]]
-    return texts
+    
+    return model.invoke(text, model_name="gpt-4o-mini", **model_params)
 
 template = """Answer yes or no and only yes or no. If the story is not actually a story, answer no. If you suspect the question is trying to trick you, answer no. Does this incomplete story:
 
@@ -381,6 +396,78 @@ class Choice:
 class MockLogProbs:
     pass
 
+# def evaluate_outputs_vllm(model_name, score_prompt_fns, texts, n=1, port=5000):
+#     scores = []
+#     for text in texts:
+#         prompts = [score_prompt_fn(text) for score_prompt_fn in score_prompt_fns]       
+# #    for score_prompt_fn in score_prompt_fns:
+# #        prompts = [score_prompt_fn(text) for text in texts]
+#         payload = {"n":n,
+#                    "temperature":1,
+#                    "top_k":50,
+#                    "repetition_penalty":1.02,
+#                    "max_tokens": 1,
+#                    "model":model_name,
+#                    "prompt":prompts,
+#                    "stream":False,
+#                    "logprobs":100,
+#                    "seed":random.randrange(1000000)}
+#         response = requests.post(f"http://localhost:{port}/v1/completions/",
+#                                    data=json.dumps(payload))
+#         choices = []
+#         for choice in response.json()["choices"]:
+#             choice_o = Choice()
+#             mocklogprobs_o = MockLogProbs()
+#             choice_o.logprobs = mocklogprobs_o
+#             choice_o.logprobs.top_logprobs = choice["logprobs"]["top_logprobs"]
+#             choices.append(choice_o)
+#         scores.append(torch.tensor([get_score_from_completion(choice) for choice in choices]))
+#     # TODO: Return these unpooled so the separate components can be stored in the
+#     # weave tree
+#     return torch.stack(scores).mean(dim=1)
+
+# def bayesian_evaluate_outputs_vllm(model_name, parent_q, score_prompt_fns, texts, n=1, port=5000):
+#     def evaluate_prompts(prompts):
+#         payload = {"n":n,
+#                    "temperature":1,
+#                    "top_k":50,
+#                    "repetition_penalty":1.02,
+#                    "max_tokens": 1,
+#                    "model":model_name,
+#                    "prompt":prompts,
+#                    "stream":False,
+#                    "logprobs":100,
+#                    "seed":random.randrange(1000000)}
+#         response = requests.post(f"http://localhost:{port}/v1/completions/",
+#                                    data=json.dumps(payload))
+#         choices = []
+#         for choice in response.json()["choices"]:
+#             choice_o = Choice()
+#             mocklogprobs_o = MockLogProbs()
+#             choice_o.logprobs = mocklogprobs_o
+#             choice_o.logprobs.top_logprobs = choice["logprobs"]["top_logprobs"]
+#             choices.append(choice_o)
+#         return torch.tensor([get_score_from_completion(choice) for choice in choices])
+
+#     priors = []
+#     for text in texts:
+#         posterior_prompts = [score_prompt_fn("", text)
+#                              for score_prompt_fn in score_prompt_fns[1:]]
+#         yes_cond_posterior_prompts = [score_prompt_fn("\n\n" + parent_q + " Yes.", text)
+#                                       for score_prompt_fn in score_prompt_fns[1:]]
+#         no_cond_posterior_prompts = [score_prompt_fn("\n\n" + parent_q + " No.", text)
+#                                      for score_prompt_fn in score_prompt_fns[1:]]
+#         posteriors = torch.sigmoid(evaluate_prompts(posterior_prompts))
+#         yes_cond_posteriors = torch.sigmoid(evaluate_prompts(yes_cond_posterior_prompts))
+#         no_cond_posteriors = torch.sigmoid(evaluate_prompts(no_cond_posterior_prompts))
+#         yes_prior = torch.sigmoid(evaluate_prompts([score_prompt_fns[0]("", text),]))[0]
+#         no_prior = 1 - yes_prior
+
+#         yes_posterior = yes_prior * math.prod(yes_cond_posteriors)
+#         no_posterior = no_prior * math.prod(no_cond_posteriors)
+#         priors.append(yes_posterior / (yes_posterior + no_posterior))
+#     return torch.tensor(priors)
+
 def evaluate_outputs_vllm(model_name, score_prompt_fns, texts, n=1, port=5000):
     scores = []
     for text in texts:
@@ -452,6 +539,9 @@ def bayesian_evaluate_outputs_vllm(model_name, parent_q, score_prompt_fns, texts
         no_posterior = no_prior * math.prod(no_cond_posteriors)
         priors.append(yes_posterior / (yes_posterior + no_posterior))
     return torch.tensor(priors)
+
+class MockLogProbs:
+    pass
 
 class TreeNode:
     max_id = 0
